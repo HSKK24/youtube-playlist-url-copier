@@ -23,6 +23,27 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+/**
+ * オブジェクトを再帰的に探索して playlistVideoListRenderer を返す。
+ * YouTube の内部構造変更に対応するためパスを固定しない。
+ */
+function findPlaylistVideoListRenderer(obj, depth = 0) {
+  if (depth > 15 || !obj || typeof obj !== 'object') return null;
+  if (obj.playlistVideoListRenderer) return obj.playlistVideoListRenderer;
+  for (const value of Object.values(obj)) {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const result = findPlaylistVideoListRenderer(item, depth + 1);
+        if (result) return result;
+      }
+    } else if (value && typeof value === 'object') {
+      const result = findPlaylistVideoListRenderer(value, depth + 1);
+      if (result) return result;
+    }
+  }
+  return null;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const getVideosBtn = document.getElementById('getVideosBtn');
   const messageArea = document.getElementById('messageArea');
@@ -391,11 +412,8 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      // 3. 初回データ抽出
-      const playlistRenderer = initialData?.contents?.twoColumnBrowseResultsRenderer?.tabs?.[0]
-        ?.tabRenderer?.content?.sectionListRenderer?.contents?.[0]
-        ?.itemSectionRenderer?.contents?.[0]
-        ?.playlistVideoListRenderer;
+      // 3. 初回データ抽出（再帰検索でYouTube内部構造変更に対応）
+      const playlistRenderer = findPlaylistVideoListRenderer(initialData);
 
       if (!playlistRenderer) {
         console.warn('playlistVideoListRendererが見つからない、正規表現フォールバックを使用');
