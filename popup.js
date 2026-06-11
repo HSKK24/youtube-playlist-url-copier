@@ -44,6 +44,35 @@ function findPlaylistVideoListRenderer(obj, depth = 0) {
   return null;
 }
 
+/**
+ * playlistVideoListRenderer が見つからない場合のフォールバック。
+ * ytInitialData 全体から playlistVideoRenderer を直接収集する。
+ * continuation token も同時に探す。
+ */
+function extractVideosDirectly(obj, result = { videos: [], continuationToken: null }, depth = 0) {
+  if (depth > 20 || !obj || typeof obj !== 'object') return result;
+
+  if (obj.playlistVideoRenderer) {
+    const r = obj.playlistVideoRenderer;
+    const videoId = r.videoId;
+    const title = r?.title?.runs?.[0]?.text || r?.title?.simpleText || '（タイトル不明）';
+    if (videoId) result.videos.push({ title, url: `https://www.youtube.com/watch?v=${videoId}` });
+  }
+
+  if (!result.continuationToken && obj.continuationCommand?.token) {
+    result.continuationToken = obj.continuationCommand.token;
+  }
+
+  for (const value of Object.values(obj)) {
+    if (Array.isArray(value)) {
+      for (const item of value) extractVideosDirectly(item, result, depth + 1);
+    } else if (value && typeof value === 'object') {
+      extractVideosDirectly(value, result, depth + 1);
+    }
+  }
+  return result;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const getVideosBtn = document.getElementById('getVideosBtn');
   const messageArea = document.getElementById('messageArea');
@@ -415,18 +444,27 @@ document.addEventListener('DOMContentLoaded', () => {
       // 3. 初回データ抽出（再帰検索でYouTube内部構造変更に対応）
       const playlistRenderer = findPlaylistVideoListRenderer(initialData);
 
-      if (!playlistRenderer) {
-        console.warn('playlistVideoListRendererが見つからない、正規表現フォールバックを使用');
-        handleFetchResult(extractVideosByRegex(html));
-        getVideosBtn.disabled = false;
-        return;
-      }
-
       const allFetchedVideos = [];
-      const contents = playlistRenderer?.contents || [];
+      let continuationToken;
 
-      const { videos: firstVideos, continuationToken } = extractVideosFromContents(contents);
-      allFetchedVideos.push(...firstVideos);
+      if (playlistRenderer) {
+        const contents = playlistRenderer?.contents || [];
+        const extracted = extractVideosFromContents(contents);
+        allFetchedVideos.push(...extracted.videos);
+        continuationToken = extracted.continuationToken;
+      } else {
+        // playlistVideoListRenderer が見つからない場合: 全ツリーから直接収集
+        console.warn('playlistVideoListRendererが見つからない、直接抽出フォールバックを使用');
+        const { videos: directVideos, continuationToken: directToken } = extractVideosDirectly(initialData);
+        allFetchedVideos.push(...directVideos);
+        continuationToken = directToken;
+        if (directVideos.length === 0) {
+          console.warn('直接抽出も失敗、正規表現フォールバックを使用');
+          handleFetchResult(extractVideosByRegex(html));
+          getVideosBtn.disabled = false;
+          return;
+        }
+      }
 
       if (allFetchedVideos.length === 0) {
         showMessage('動画が見つかりませんでした。URLが正しいか確認してください。', true);
