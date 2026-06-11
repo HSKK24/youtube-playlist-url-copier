@@ -314,6 +314,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // --- APIキー抽出 ---
+  const SAFE_API_KEY_RE = /^[A-Za-z0-9_-]+$/;
+  const SAFE_VISITOR_DATA_RE = /^[A-Za-z0-9%+/=_-]+$/;
+
   function extractApiKey(html) {
     const patterns = [
       /"INNERTUBE_API_KEY"\s*:\s*"([^"]+)"/,
@@ -321,7 +324,7 @@ document.addEventListener('DOMContentLoaded', () => {
     ];
     for (const pattern of patterns) {
       const match = html.match(pattern);
-      if (match) return match[1];
+      if (match && SAFE_API_KEY_RE.test(match[1])) return match[1];
     }
     return null;
   }
@@ -341,7 +344,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (clientVersionMatch) info.clientVersion = clientVersionMatch[1];
 
     const visitorDataMatch = html.match(/"visitorData"\s*:\s*"([^"]+)"/);
-    if (visitorDataMatch) info.visitorData = visitorDataMatch[1];
+    if (visitorDataMatch && SAFE_VISITOR_DATA_RE.test(visitorDataMatch[1])) {
+      info.visitorData = visitorDataMatch[1];
+    }
 
     return info;
   }
@@ -528,12 +533,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      if (allFetchedVideos.length === 0) {
-        showMessage('動画が見つかりませんでした。URLが正しいか確認してください。', true);
-        getVideosBtn.disabled = false;
-        return;
-      }
-
       showMessage(`🔄 ${allFetchedVideos.length} 件取得済み...`, false);
 
       // 4. APIキーを使用したcontinuation取得
@@ -584,21 +583,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
           const contData = await contResponse.json();
 
-          let contContents = contData?.onResponseReceivedActions?.[0]
-            ?.appendContinuationItemsAction?.continuationItems;
+          // 新形式・旧形式どちらの continuation レスポンスにも対応
+          const contItems = contData?.onResponseReceivedActions?.[0]
+            ?.appendContinuationItemsAction?.continuationItems
+            || contData?.continuationContents?.playlistVideoListContinuation?.contents;
 
-          if (!contContents) {
-            contContents = contData?.continuationContents
-              ?.playlistVideoListContinuation?.contents;
-          }
+          if (!contItems || contItems.length === 0) break;
 
-          if (!contContents || contContents.length === 0) break;
+          // flat な items 配列として処理（旧形式・新形式両対応）
+          const { videos: moreVideos, continuationToken: newToken } = extractVideosFromContents(contItems);
 
-          const { videos: moreVideos, continuationToken: newToken } = extractVideosFromContents(contContents);
+          // extractFromSectionList も試す（新形式で sections 構造の場合）
           if (moreVideos.length === 0) break;
 
           allFetchedVideos.push(...moreVideos);
-          nextToken = newToken;
+          nextToken = newToken ?? null;
 
           showMessage(`🔄 ${allFetchedVideos.length} 件取得済み...続きを読み込んでいます...`, false);
         } catch (contError) {
