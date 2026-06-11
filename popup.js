@@ -217,27 +217,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- ytInitialDataの安全な抽出 ---
   function extractYtInitialData(html) {
-    const patterns = [
-      /var\s+ytInitialData\s*=\s*(\{.+?\});\s*<\/script>/s,
-      /window\["ytInitialData"\]\s*=\s*(\{.+?\});\s*<\/script>/s,
-      /ytInitialData\s*=\s*(\{.+?\});\s*<\/script>/s
+    // YouTubeのHTML変更に対応するため複数マーカーを試す
+    const markers = [
+      'var ytInitialData = ',
+      'window["ytInitialData"] = ',
+      "window['ytInitialData'] = ",
+      'window.ytInitialData = ',
+      'ytInitialData = ',
     ];
 
-    for (const pattern of patterns) {
-      const match = html.match(pattern);
-      if (match) {
-        try {
-          return JSON.parse(match[1]);
-        } catch (e) {
-          console.error('ytInitialData JSON解析失敗:', e.message);
-        }
-      }
-    }
+    for (const marker of markers) {
+      const startIdx = html.indexOf(marker);
+      if (startIdx === -1) continue;
 
-    const marker = 'var ytInitialData = ';
-    const startIdx = html.indexOf(marker);
-    if (startIdx !== -1) {
       const jsonStart = startIdx + marker.length;
+      if (html[jsonStart] !== '{') continue;
+
+      // ブレースカウンタ方式で正確にJSONの終端を見つける
       let depth = 0;
       let inString = false;
       let escape = false;
@@ -253,8 +249,12 @@ document.addEventListener('DOMContentLoaded', () => {
           else if (ch === '}') {
             depth--;
             if (depth === 0) {
-              const jsonStr = html.substring(jsonStart, i + 1);
-              try { return JSON.parse(jsonStr); } catch (e) { break; }
+              try {
+                return JSON.parse(html.substring(jsonStart, i + 1));
+              } catch (e) {
+                console.warn('ytInitialData JSON解析失敗 (marker:', marker.trim(), '):', e.message);
+                break;
+              }
             }
           }
         }
