@@ -59,8 +59,29 @@ function extractVideosDirectly(obj, result = { videos: [], continuationToken: nu
     if (videoId) result.videos.push({ title, url: `https://www.youtube.com/watch?v=${videoId}` });
   }
 
-  if (!result.continuationToken && obj.continuationCommand?.token) {
-    result.continuationToken = obj.continuationCommand.token;
+  if (!result.continuationToken) {
+    // continuationItemRenderer パターン（通常ルートと同じロジック）
+    if (obj.continuationItemRenderer) {
+      const ci = obj.continuationItemRenderer;
+      const commands = ci?.continuationEndpoint?.commandExecutorCommand?.commands;
+      if (Array.isArray(commands)) {
+        for (const cmd of commands) {
+          if (cmd?.continuationCommand?.token) {
+            result.continuationToken = cmd.continuationCommand.token;
+            break;
+          }
+        }
+      }
+      if (!result.continuationToken) {
+        result.continuationToken = ci?.continuationEndpoint?.continuationCommand?.token
+          || ci?.button?.buttonRenderer?.command?.continuationCommand?.token
+          || null;
+      }
+    }
+    // シンプルな continuationCommand.token パターン
+    if (!result.continuationToken && obj.continuationCommand?.token) {
+      result.continuationToken = obj.continuationCommand.token;
+    }
   }
 
   for (const value of Object.values(obj)) {
@@ -439,6 +460,13 @@ document.addEventListener('DOMContentLoaded', () => {
         handleFetchResult(extractVideosByRegex(html));
         getVideosBtn.disabled = false;
         return;
+      }
+
+      // 診断ログ: ytInitialDataの構造を確認（デバッグ用）
+      console.warn('[DEBUG] ytInitialData top-level keys:', Object.keys(initialData).join(', '));
+      const contentsEntry = initialData?.contents;
+      if (contentsEntry) {
+        console.warn('[DEBUG] initialData.contents keys:', Object.keys(contentsEntry).join(', '));
       }
 
       // 3. 初回データ抽出（再帰検索でYouTube内部構造変更に対応）
