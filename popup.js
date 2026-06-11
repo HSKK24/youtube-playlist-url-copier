@@ -346,7 +346,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return info;
   }
 
-  // --- contents配列から動画とトークンを抽出 ---
+  // --- contents配列から動画とトークンを抽出（旧形式・新形式両対応）---
   function extractVideosFromContents(contents) {
     const videos = [];
     let continuationToken = null;
@@ -354,40 +354,71 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!Array.isArray(contents)) return { videos, continuationToken };
 
     contents.forEach(item => {
+      // 旧形式: playlistVideoRenderer
       const renderer = item?.playlistVideoRenderer;
-      if (renderer) {
-        const videoId = renderer.videoId;
-        const title = renderer?.title?.runs?.[0]?.text
-          || renderer?.title?.simpleText
-          || '（タイトル不明）';
-        if (videoId) {
-          videos.push({
-            title: title,
-            url: `https://www.youtube.com/watch?v=${videoId}`
-          });
-        }
+      if (renderer?.videoId) {
+        videos.push({
+          title: renderer?.title?.runs?.[0]?.text || renderer?.title?.simpleText || '（タイトル不明）',
+          url: `https://www.youtube.com/watch?v=${renderer.videoId}`
+        });
       }
 
+      // 新形式: lockupViewModel (YouTube 2025+)
+      const lvm = item?.lockupViewModel;
+      if (lvm?.contentType === 'LOCKUP_CONTENT_TYPE_VIDEO' && lvm?.contentId) {
+        videos.push({
+          title: lvm?.metadata?.lockupMetadataViewModel?.title?.content || '（タイトル不明）',
+          url: `https://www.youtube.com/watch?v=${lvm.contentId}`
+        });
+      }
+
+      // 旧形式 continuation: continuationItemRenderer
       const contItem = item?.continuationItemRenderer;
       if (contItem) {
         let token = null;
-
         const commands = contItem?.continuationEndpoint?.commandExecutorCommand?.commands;
         if (Array.isArray(commands)) {
           for (const cmd of commands) {
-            if (cmd?.continuationCommand?.token) {
-              token = cmd.continuationCommand.token;
-              break;
-            }
+            if (cmd?.continuationCommand?.token) { token = cmd.continuationCommand.token; break; }
           }
         }
-
         if (!token) token = contItem?.continuationEndpoint?.continuationCommand?.token;
         if (!token) token = contItem?.button?.buttonRenderer?.command?.continuationCommand?.token;
-
         if (token) continuationToken = token;
       }
+
+      // 新形式 continuation: continuationItemViewModel (YouTube 2025+)
+      const contVM = item?.continuationItemViewModel;
+      if (contVM?.continuationCommand?.token) {
+        continuationToken = contVM.continuationCommand.token;
+      }
     });
+
+    return { videos, continuationToken };
+  }
+
+  // --- 新形式: sectionList から動画と continuation token を抽出 ---
+  function extractFromSectionList(sections) {
+    const videos = [];
+    let continuationToken = null;
+
+    if (!Array.isArray(sections)) return { videos, continuationToken };
+
+    for (const section of sections) {
+      // 動画アイテム: itemSectionRenderer.contents に lockupViewModel が並ぶ
+      if (section.itemSectionRenderer) {
+        const { videos: v, continuationToken: t } = extractVideosFromContents(
+          section.itemSectionRenderer.contents || []
+        );
+        videos.push(...v);
+        if (t) continuationToken = t;
+      }
+      // 新形式 continuation: セクション自体が continuationItemViewModel
+      const contVM = section?.continuationItemViewModel;
+      if (contVM?.continuationCommand?.token) {
+        continuationToken = contVM.continuationCommand.token;
+      }
+    }
 
     return { videos, continuationToken };
   }
@@ -462,77 +493,39 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      // 診断ログ: ytInitialDataの構造を確認（デバッグ用）
-      console.warn('[DEBUG] ytInitialData top-level keys:', Object.keys(initialData).join(', '));
-      const contentsEntry = initialData?.contents;
-      if (contentsEntry) {
-        console.warn('[DEBUG] initialData.contents keys:', Object.keys(contentsEntry).join(', '));
-        const twoCol = contentsEntry?.twoColumnBrowseResultsRenderer;
-        if (twoCol) {
-          console.warn('[DEBUG] twoCol keys:', Object.keys(twoCol).join(', '));
-          const tabs = twoCol?.tabs;
-          if (Array.isArray(tabs) && tabs.length > 0) {
-            const firstTab = tabs[0];
-            console.warn('[DEBUG] tabs[0] keys:', Object.keys(firstTab).join(', '));
-            const tabContent = firstTab?.tabRenderer?.content;
-            if (tabContent) {
-              console.warn('[DEBUG] tabRenderer.content keys:', Object.keys(tabContent).join(', '));
-              // sectionListRenderer の場合
-              const sections = tabContent?.sectionListRenderer?.contents;
-              if (Array.isArray(sections)) {
-                console.warn('[DEBUG] sectionListRenderer.contents length:', sections.length);
-                if (sections[0]) console.warn('[DEBUG] sections[0] keys:', Object.keys(sections[0]).join(', '));
-                // itemSectionRenderer の中を確認
-                const itemSection = sections[0]?.itemSectionRenderer;
-                if (itemSection) {
-                  console.warn('[DEBUG] itemSectionRenderer keys:', Object.keys(itemSection).join(', '));
-                  const itemContents = itemSection?.contents;
-                  if (Array.isArray(itemContents)) {
-                    console.warn('[DEBUG] itemSection.contents length:', itemContents.length);
-                    if (itemContents[0]) console.warn('[DEBUG] itemSection.contents[0] keys:', Object.keys(itemContents[0]).join(', '));
-                    if (itemContents[1]) console.warn('[DEBUG] itemSection.contents[1] keys:', Object.keys(itemContents[1]).join(', '));
-                  }
-                }
-                if (sections[1]) console.warn('[DEBUG] sections[1] keys:', Object.keys(sections[1]).join(', '));
-              }
-              // richGridRenderer の場合
-              const richGrid = tabContent?.richGridRenderer;
-              if (richGrid) {
-                console.warn('[DEBUG] richGridRenderer keys:', Object.keys(richGrid).join(', '));
-                const richContents = richGrid?.contents;
-                if (Array.isArray(richContents)) {
-                  console.warn('[DEBUG] richGridRenderer.contents length:', richContents.length);
-                  if (richContents[0]) console.warn('[DEBUG] richContents[0] keys:', Object.keys(richContents[0]).join(', '));
-                }
-              }
-            }
-          }
-        }
-      }
-
-      // 3. 初回データ抽出（再帰検索でYouTube内部構造変更に対応）
-      const playlistRenderer = findPlaylistVideoListRenderer(initialData);
-
+      // 3. 初回動画データ抽出（旧形式・新形式両対応）
       const allFetchedVideos = [];
       let continuationToken;
 
+      // 優先1: 旧形式 playlistVideoListRenderer（再帰検索）
+      const playlistRenderer = findPlaylistVideoListRenderer(initialData);
       if (playlistRenderer) {
-        const contents = playlistRenderer?.contents || [];
-        const extracted = extractVideosFromContents(contents);
-        allFetchedVideos.push(...extracted.videos);
-        continuationToken = extracted.continuationToken;
-      } else {
-        // playlistVideoListRenderer が見つからない場合: 全ツリーから直接収集
-        console.warn('playlistVideoListRendererが見つからない、直接抽出フォールバックを使用');
-        const { videos: directVideos, continuationToken: directToken } = extractVideosDirectly(initialData);
-        allFetchedVideos.push(...directVideos);
-        continuationToken = directToken;
-        if (directVideos.length === 0) {
-          console.warn('直接抽出も失敗、正規表現フォールバックを使用');
-          handleFetchResult(extractVideosByRegex(html));
-          getVideosBtn.disabled = false;
-          return;
-        }
+        const { videos, continuationToken: t } = extractVideosFromContents(playlistRenderer.contents || []);
+        allFetchedVideos.push(...videos);
+        continuationToken = t;
+      }
+
+      // 優先2: 新形式 lockupViewModel（sectionListRenderer 配下）
+      if (allFetchedVideos.length === 0) {
+        const sections = initialData?.contents?.twoColumnBrowseResultsRenderer
+          ?.tabs?.[0]?.tabRenderer?.content?.sectionListRenderer?.contents;
+        const { videos, continuationToken: t } = extractFromSectionList(sections);
+        allFetchedVideos.push(...videos);
+        continuationToken = t;
+      }
+
+      // 優先3: 全ツリー再帰（extractVideosDirectly）
+      if (allFetchedVideos.length === 0) {
+        const { videos, continuationToken: t } = extractVideosDirectly(initialData);
+        allFetchedVideos.push(...videos);
+        continuationToken = t;
+      }
+
+      // 最終: 正規表現フォールバック（タイトルなし）
+      if (allFetchedVideos.length === 0) {
+        handleFetchResult(extractVideosByRegex(html));
+        getVideosBtn.disabled = false;
+        return;
       }
 
       if (allFetchedVideos.length === 0) {
