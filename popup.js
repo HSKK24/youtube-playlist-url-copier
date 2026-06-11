@@ -467,6 +467,35 @@ document.addEventListener('DOMContentLoaded', () => {
       const contentsEntry = initialData?.contents;
       if (contentsEntry) {
         console.warn('[DEBUG] initialData.contents keys:', Object.keys(contentsEntry).join(', '));
+        const twoCol = contentsEntry?.twoColumnBrowseResultsRenderer;
+        if (twoCol) {
+          console.warn('[DEBUG] twoCol keys:', Object.keys(twoCol).join(', '));
+          const tabs = twoCol?.tabs;
+          if (Array.isArray(tabs) && tabs.length > 0) {
+            const firstTab = tabs[0];
+            console.warn('[DEBUG] tabs[0] keys:', Object.keys(firstTab).join(', '));
+            const tabContent = firstTab?.tabRenderer?.content;
+            if (tabContent) {
+              console.warn('[DEBUG] tabRenderer.content keys:', Object.keys(tabContent).join(', '));
+              // sectionListRenderer の場合
+              const sections = tabContent?.sectionListRenderer?.contents;
+              if (Array.isArray(sections)) {
+                console.warn('[DEBUG] sectionListRenderer.contents length:', sections.length);
+                if (sections[0]) console.warn('[DEBUG] sections[0] keys:', Object.keys(sections[0]).join(', '));
+              }
+              // richGridRenderer の場合
+              const richGrid = tabContent?.richGridRenderer;
+              if (richGrid) {
+                console.warn('[DEBUG] richGridRenderer keys:', Object.keys(richGrid).join(', '));
+                const richContents = richGrid?.contents;
+                if (Array.isArray(richContents)) {
+                  console.warn('[DEBUG] richGridRenderer.contents length:', richContents.length);
+                  if (richContents[0]) console.warn('[DEBUG] richContents[0] keys:', Object.keys(richContents[0]).join(', '));
+                }
+              }
+            }
+          }
+        }
       }
 
       // 3. 初回データ抽出（再帰検索でYouTube内部構造変更に対応）
