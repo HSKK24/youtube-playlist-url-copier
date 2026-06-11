@@ -5,7 +5,7 @@
   "description": "YouTubeプレイリストから動画のタイトルとURLを抽出してコピーできる拡張機能",
   "permissions": [
     "clipboardWrite",
-    "declarativeNetRequestWithHostAccess"
+    "declarativeNetRequest"
   ],
   "host_permissions": [
     "https://www.youtube.com/*",
