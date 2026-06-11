@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "YouTube Playlist URL Copier",
+  "version": "2.2",
+  "description": "YouTubeプレイリストから動画のタイトルとURLを抽出してコピーできる拡張機能",
+  "permissions": [
+    "clipboardWrite",
+    "declarativeNetRequest"
+  ],
+  "host_permissions": [
+    "https://www.youtube.com/*",
+    "https://youtube.com/*"
+  ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "ruleset_1",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  },
+  "action": {
+    "default_popup": "popup.html"
+  }
+}

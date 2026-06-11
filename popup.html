@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+  <title>YouTube Playlist URL Copier</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <h1>🎬 YouTube Playlist URL Copier</h1>
+
+  <!-- URL入力 -->
+  <div class="url-input-group">
+    <input type="text" id="playlistUrl" placeholder="https://www.youtube.com/playlist?list=...">
+  </div>
+
+  <!-- 取得ボタン -->
+  <div class="action-bar">
+    <button id="getVideosBtn">📋 動画を取得</button>
+  </div>
+
+  <!-- メッセージエリア -->
+  <div id="messageArea" class="message"></div>
+
+  <!-- リストヘッダー -->
+  <div class="list-header">
+    <div class="list-header-left">
+      <input type="checkbox" id="selectAllCheckbox" title="全選択/全解除">
+      <label for="selectAllCheckbox">全選択</label>
+      <span id="videoCount"></span>
+    </div>
+  </div>
+
+  <!-- 範囲指定 -->
+  <div class="range-selector">
+    <label>範囲指定：</label>
+    <input type="number" id="rangeStart" min="1" placeholder="開始" title="開始番号">
+    <span>〜</span>
+    <input type="number" id="rangeEnd" min="1" placeholder="終了" title="終了番号">
+    <button id="selectRangeBtn" class="range-btn">範囲選択</button>
+  </div>
+
+  <!-- 動画リスト -->
+  <div id="videoList" class="video-list">
+    <!-- 動画がここに表示される -->
+  </div>
+
+  <!-- フッター -->
+  <div class="footer">
+    <div class="copy-options">
+      <label><input type="radio" name="copyFormat" value="urlOnly" checked> URLのみ</label>
+      <label><input type="radio" name="copyFormat" value="titleAndUrl"> タイトルとURL</label>
+    </div>
+    <div class="footer-buttons">
+      <button id="copySelectedBtn" disabled>📄 選択した動画をコピー</button>
+      <button id="closeBtn" class="close-btn">✕ 閉じる</button>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+
+</html>
