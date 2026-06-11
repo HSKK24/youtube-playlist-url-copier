@@ -1,5 +1,28 @@
 // YouTube Playlist URL Copier — ポップアップ制御スクリプト
 
+const MAX_PAGES = 200;          // continuation ループ上限（約20,000動画）
+const CONTINUATION_DELAY_MS = 150; // ページ間の待機時間（レート制御）
+const YT_CLIENT_NAME_WEB = '1'; // YouTube 内部クライアント識別子（WEB = "1"）
+
+const ALLOWED_YT_HOSTS = new Set(['www.youtube.com', 'youtube.com', 'm.youtube.com']);
+
+/** プレイリストURLとして有効かどうか検証する */
+function isValidPlaylistUrl(rawUrl) {
+  try {
+    const parsed = new URL(rawUrl);
+    return ALLOWED_YT_HOSTS.has(parsed.hostname)
+      && parsed.pathname === '/playlist'
+      && parsed.searchParams.has('list');
+  } catch {
+    return false;
+  }
+}
+
+/** 指定ミリ秒待機する */
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const getVideosBtn = document.getElementById('getVideosBtn');
   const messageArea = document.getElementById('messageArea');
@@ -32,19 +55,18 @@ document.addEventListener('DOMContentLoaded', () => {
     return checkedRadio ? checkedRadio.value : 'urlOnly';
   }
 
-  // --- 動画リストの描画 ---
+  // --- 動画リストの描画（DocumentFragment で一括挿入しリフローを最小化）---
   function renderVideoList(videos) {
-    videoList.innerHTML = '';
+    const fragment = document.createDocumentFragment();
     videos.forEach((video, index) => {
       const item = document.createElement('div');
       item.className = 'video-item';
+      item.dataset.index = index;
 
       const checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
       checkbox.className = 'video-checkbox';
-      checkbox.id = `video-${index}`;
       checkbox.checked = true;
-      checkbox.addEventListener('change', updateSelectionState);
 
       const numberLabel = document.createElement('span');
       numberLabel.className = 'video-number';
@@ -69,34 +91,49 @@ document.addEventListener('DOMContentLoaded', () => {
       const copyBtn = document.createElement('button');
       copyBtn.className = 'copy-btn';
       copyBtn.textContent = 'コピー';
-      copyBtn.addEventListener('click', () => {
-        const format = getSelectedCopyFormat();
-        const copyText = format === 'titleAndUrl' ? `${video.title}\n${video.url}` : video.url;
-
-        navigator.clipboard.writeText(copyText).then(() => {
-          const originalText = copyBtn.textContent;
-          copyBtn.textContent = '✓';
-          copyBtn.classList.add('copied');
-          setTimeout(() => {
-            copyBtn.textContent = originalText;
-            copyBtn.classList.remove('copied');
-          }, 2000);
-        }).catch(err => {
-          console.error('コピー失敗', err);
-          showMessage('コピーに失敗しました。', true);
-        });
-      });
+      copyBtn.dataset.index = index;
 
       item.appendChild(checkbox);
       item.appendChild(numberLabel);
       item.appendChild(infoContainer);
       item.appendChild(copyBtn);
-      videoList.appendChild(item);
+      fragment.appendChild(item);
     });
 
+    videoList.replaceChildren(fragment);
     selectAllCheckbox.checked = true;
     updateSelectionState();
   }
+
+  // --- イベント委譲: コピーボタン（個別コピー）---
+  videoList.addEventListener('click', (e) => {
+    const copyBtn = e.target.closest('.copy-btn');
+    if (!copyBtn) return;
+    const index = parseInt(copyBtn.dataset.index, 10);
+    const video = allVideos[index];
+    if (!video) return;
+
+    const format = getSelectedCopyFormat();
+    const copyText = format === 'titleAndUrl' ? `${video.title}\n${video.url}` : video.url;
+
+    navigator.clipboard.writeText(copyText).then(() => {
+      const original = copyBtn.textContent;
+      copyBtn.textContent = '✓';
+      copyBtn.classList.add('copied');
+      setTimeout(() => {
+        copyBtn.textContent = original;
+        copyBtn.classList.remove('copied');
+      }, 2000);
+    }).catch(err => {
+      console.error('コピー失敗', err);
+      showMessage('コピーに失敗しました。', true);
+    });
+  });
+
+  // --- イベント委譲: チェックボックス変更 ---
+  videoList.addEventListener('change', (e) => {
+    if (e.target.classList.contains('video-checkbox')) updateSelectionState();
+  });
 
   // --- 選択状態の更新 ---
   function updateSelectionState() {
@@ -320,7 +357,7 @@ document.addEventListener('DOMContentLoaded', () => {
       showMessage('プレイリストURLを入力してください。', true);
       return;
     }
-    if (!url.includes('youtube.com/playlist?list=')) {
+    if (!isValidPlaylistUrl(url)) {
       showMessage('有効なYouTubeプレイリストURLを入力してください。', true);
       return;
     }
@@ -384,17 +421,15 @@ document.addEventListener('DOMContentLoaded', () => {
       // 4. APIキーを使用したcontinuation取得
       let nextToken = continuationToken;
       let pageCount = 0;
-      const maxPages = 200; // 約20000動画まで
 
-      while (nextToken && apiKey && pageCount < maxPages) {
+      while (nextToken && apiKey && pageCount < MAX_PAGES) {
         pageCount++;
+        await sleep(CONTINUATION_DELAY_MS);
         try {
-          console.log(`continuation取得開始: ページ ${pageCount}`);
-
           const headers = {
             'Content-Type': 'application/json',
             'Accept-Language': 'ja,en;q=0.9',
-            'X-YouTube-Client-Name': '1',
+            'X-YouTube-Client-Name': YT_CLIENT_NAME_WEB,
             'X-YouTube-Client-Version': clientInfo.clientVersion,
             'Origin': 'https://www.youtube.com'
           };
@@ -425,7 +460,7 @@ document.addEventListener('DOMContentLoaded', () => {
           );
 
           if (!contResponse.ok) {
-            console.error('continuation API応答エラー:', contResponse.status, await contResponse.text());
+            console.warn('continuation API応答エラー:', contResponse.status);
             break;
           }
 
@@ -449,7 +484,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
           showMessage(`🔄 ${allFetchedVideos.length} 件取得済み...続きを読み込んでいます...`, false);
         } catch (contError) {
-          console.error('追加取得エラー:', contError);
+          console.warn('continuation取得エラー:', contError);
           break;
         }
       }
