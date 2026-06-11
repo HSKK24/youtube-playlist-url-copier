@@ -482,6 +482,18 @@ document.addEventListener('DOMContentLoaded', () => {
               if (Array.isArray(sections)) {
                 console.warn('[DEBUG] sectionListRenderer.contents length:', sections.length);
                 if (sections[0]) console.warn('[DEBUG] sections[0] keys:', Object.keys(sections[0]).join(', '));
+                // itemSectionRenderer の中を確認
+                const itemSection = sections[0]?.itemSectionRenderer;
+                if (itemSection) {
+                  console.warn('[DEBUG] itemSectionRenderer keys:', Object.keys(itemSection).join(', '));
+                  const itemContents = itemSection?.contents;
+                  if (Array.isArray(itemContents)) {
+                    console.warn('[DEBUG] itemSection.contents length:', itemContents.length);
+                    if (itemContents[0]) console.warn('[DEBUG] itemSection.contents[0] keys:', Object.keys(itemContents[0]).join(', '));
+                    if (itemContents[1]) console.warn('[DEBUG] itemSection.contents[1] keys:', Object.keys(itemContents[1]).join(', '));
+                  }
+                }
+                if (sections[1]) console.warn('[DEBUG] sections[1] keys:', Object.keys(sections[1]).join(', '));
               }
               // richGridRenderer の場合
               const richGrid = tabContent?.richGridRenderer;
